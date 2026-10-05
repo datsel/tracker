@@ -11,7 +11,7 @@
         
         .input-group { margin-bottom: 30px; }
         textarea, input[type="text"], input[type="url"] { width: 100%; padding: 15px; border: 2px solid #e0e0e0; border-radius: 12px; margin-bottom: 15px; font-family: inherit; font-size: 14px; box-sizing: border-box; transition: border-color 0.3s; line-height: 1.5; }
-        textarea { height: 120px; }
+        textarea { height: 180px; }
         textarea:focus, input:focus { border-color: #8DA750; outline: none; }
         
         button.submit-btn { background: linear-gradient(135deg, #8DA750, #537B2F); color: #fff; font-size: 1.1em; font-weight: 800; padding: 14px 24px; border: none; border-radius: 12px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; width: 100%; box-shadow: 0 4px 10px rgba(83, 123, 47, 0.3); }
@@ -34,21 +34,22 @@
 <body>
     <div class="container">
         
-        <!-- MODULE 1: SCHEDULE ANNOUNCEMENTS -->
+        <!-- MODULE 1: UPGRADED SCHEDULE ANNOUNCEMENTS -->
         <h2>Class Schedule Updates</h2>
         <div class="input-group">
             <div class="instructions">
-                <strong>Format:</strong> <code>Subject - Activity - Date</code><br>
-                <em>Example:</em> Gen Zoology - Lab Report 3 - 10/12
+                <strong>Foolproof Input:</strong> Paste lists of any length. Line breaks are fully supported!
             </div>
-            <textarea id="inputText" placeholder="Paste schedule updates here..."></textarea>
-            <button id="submitBtn" class="submit-btn">Publish to Schedule</button>
+            <input type="text" id="schedSubject" placeholder="Subject (e.g., TCWD)">
+            <textarea id="schedTask" placeholder="Paste your long announcement or groups here..."></textarea>
+            <input type="text" id="schedDate" placeholder="Due Date (e.g., OCT 15 or TBA)">
+            <button id="submitBtn" class="submit-btn">Publish Announcement</button>
             <p id="statusSchedule" style="text-align: center; font-weight: bold; margin-top: 10px;"></p>
         </div>
 
         <br><br>
 
-        <!-- MODULE 2: G-DRIVE LINK UPLOADER FOR TRANSES -->
+        <!-- MODULE 2: G-DRIVE LINK UPLOADER -->
         <h2>Link Notes & Transes</h2>
         <div class="input-group">
             <div class="instructions">
@@ -83,7 +84,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // --- LOAD LIVE TASKS INTO ADMIN DASHBOARD ---
+        // --- LOAD LIVE TASKS ---
         async function loadLiveTasks() {
             const list = document.getElementById('liveTasksList');
             list.innerHTML = 'Loading...';
@@ -118,7 +119,7 @@
                     groupedTasks[subject].forEach(task => {
                         const div = document.createElement('div');
                         div.className = 'admin-task';
-                        let previewText = (task.task || "").substring(0, 50);
+                        let previewText = (task.task || "").substring(0, 50).replace(/\n/g, ' ') + "...";
                         
                         div.innerHTML = `
                             <div class="admin-task-info">
@@ -146,46 +147,61 @@
         }
         loadLiveTasks();
 
-        // --- SUBMIT SCHEDULE UPDATES ---
+        // --- UPGRADED SUBMIT SCHEDULE LOGIC ---
         document.getElementById('submitBtn').addEventListener('click', async () => {
-            const text = document.getElementById('inputText').value;
+            const subject = document.getElementById('schedSubject').value.trim();
+            const taskText = document.getElementById('schedTask').value.trim();
+            const dateString = document.getElementById('schedDate').value.trim();
             const status = document.getElementById('statusSchedule');
-            status.style.color = "#333";
-            status.innerText = "Uploading schedule...";
-            
-            let tasksToUpload = [];
-            const lines = text.split('\n');
-            
-            for (let i = 0; i < lines.length; i++) {
-                let line = lines[i].trim();
-                if (!line) continue;
-                
-                let parts = line.split('-').map(p => p.trim());
-                if (parts.length >= 3) {
-                    let subject = parts.shift(); 
-                    let dateString = parts.pop(); 
-                    let taskText = parts.join(' - '); 
 
-                    let standardDate = "9999-12-31"; 
-                    let raw = dateString.toUpperCase();
-                    let slashMatch = raw.match(/(\d{1,2})\/(\d{1,2})/);
-                    if (slashMatch) standardDate = `2026-${slashMatch[1].padStart(2,'0')}-${slashMatch[2].padStart(2,'0')}`;
-                    
-                    tasksToUpload.push({ subject: subject, task: taskText, date: standardDate, displayDate: dateString });
-                }
-            }
-
-            if (tasksToUpload.length === 0) {
-                status.style.color = "red"; status.innerText = "Please ensure format: Subject - Activity - Date";
+            if (!subject || !taskText || !dateString) {
+                status.style.color = "red";
+                status.innerText = "Please fill out all 3 fields!";
                 return;
             }
 
+            status.style.color = "#333";
+            status.innerText = "Uploading announcement...";
+            document.getElementById('submitBtn').disabled = true;
+
+            let standardDate = "9999-12-31"; 
+            let raw = dateString.toUpperCase();
+            let slashMatch = raw.match(/(\d{1,2})\/(\d{1,2})/);
+            
+            if (slashMatch) {
+                standardDate = `2026-${slashMatch[1].padStart(2,'0')}-${slashMatch[2].padStart(2,'0')}`;
+            } else {
+                const months = { JAN:'01', FEB:'02', MAR:'03', APR:'04', MAY:'05', JUN:'06', JUL:'07', AUG:'08', SEP:'09', OCT:'10', NOV:'11', DEC:'12' };
+                for (let m in months) {
+                    if (raw.includes(m)) {
+                        let dayMatch = raw.match(/\d{1,2}/);
+                        if (dayMatch) standardDate = `2026-${months[m]}-${dayMatch[0].padStart(2,'0')}`;
+                        break;
+                    }
+                }
+            }
+
             try {
-                for (let t of tasksToUpload) await addDoc(collection(db, "olfu_deadlines"), t);
-                status.style.color = "green"; status.innerText = `Successfully uploaded ${tasksToUpload.length} blocks!`;
-                document.getElementById('inputText').value = ''; 
+                await addDoc(collection(db, "olfu_deadlines"), {
+                    subject: subject,
+                    task: taskText,
+                    date: standardDate,
+                    displayDate: dateString
+                });
+                status.style.color = "green";
+                status.innerText = `Successfully published!`;
+                
+                // Clear the boxes for the next announcement
+                document.getElementById('schedSubject').value = '';
+                document.getElementById('schedTask').value = '';
+                document.getElementById('schedDate').value = '';
                 loadLiveTasks(); 
-            } catch (e) { status.style.color = "red"; status.innerText = "Error: " + e.message; }
+            } catch (e) { 
+                status.style.color = "red"; 
+                status.innerText = "Error: " + e.message; 
+            }
+            
+            document.getElementById('submitBtn').disabled = false;
         });
 
         // --- UPLOAD TRANSES LINK ---
@@ -207,19 +223,15 @@
                 return;
             }
 
-            const subject = parts[0];
-            const lesson = parts[1];
-            const transName = parts.slice(2).join(' - '); 
-
             status.style.color = "#333";
             status.innerText = `Saving link to database...`;
             document.getElementById('uploadTransBtn').disabled = true;
 
             try {
                 await addDoc(collection(db, "olfu_transes"), {
-                    subject: subject,
-                    lesson: lesson,
-                    transName: transName,
+                    subject: parts[0],
+                    lesson: parts[1],
+                    transName: parts.slice(2).join(' - '),
                     url: linkUrl,
                     timestamp: Date.now()
                 });
@@ -230,7 +242,6 @@
                 document.getElementById('transLink').value = '';
 
             } catch (error) {
-                console.error(error);
                 status.style.color = "red";
                 status.innerText = "Upload failed. Error saving to Firestore.";
             }
