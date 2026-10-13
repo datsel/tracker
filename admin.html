@@ -29,6 +29,7 @@
         .admin-task-info span { font-size: 0.85em; color: #888; }
         
         .delete-btn { background: #ffebee; color: #d32f2f; border: 1px solid #ffcdd2; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-weight: bold; font-size: 0.85em;}
+        .delete-btn:hover { background: #d32f2f; color: white; }
     </style>
 </head>
 <body>
@@ -47,6 +48,11 @@
             <p id="statusSchedule" style="text-align: center; font-weight: bold; margin-top: 10px;"></p>
         </div>
 
+        <div class="task-manager">
+            <h3 style="margin-bottom: 15px; color: #333;">Live Activities in Database</h3>
+            <div id="liveTasksList">Loading database...</div>
+        </div>
+
         <br><br>
 
         <!-- MODULE 2: G-DRIVE LINK UPLOADER -->
@@ -63,9 +69,10 @@
         </div>
 
         <div class="task-manager">
-            <h3 style="margin-bottom: 15px; color: #333;">Live Activities in Database</h3>
-            <div id="liveTasksList">Loading database...</div>
+            <h3 style="margin-bottom: 15px; color: #333;">Live Notes & Transes in Database</h3>
+            <div id="liveTransesList">Loading database...</div>
         </div>
+
     </div>
 
     <script type="module">
@@ -84,7 +91,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // --- LOAD LIVE TASKS ---
+        // --- LOAD LIVE TASKS (SCHEDULE) ---
         async function loadLiveTasks() {
             const list = document.getElementById('liveTasksList');
             list.innerHTML = 'Loading...';
@@ -147,6 +154,68 @@
         }
         loadLiveTasks();
 
+        // --- LOAD LIVE TRANSES ---
+        async function loadLiveTranses() {
+            const list = document.getElementById('liveTransesList');
+            list.innerHTML = 'Loading...';
+            try {
+                const q = query(collection(db, "olfu_transes"), orderBy("timestamp", "desc"));
+                const snapshot = await getDocs(q);
+                list.innerHTML = '';
+                
+                if (snapshot.empty) {
+                    list.innerHTML = '<p style="color: #888;">No transes or notes posted yet.</p>';
+                    return;
+                }
+
+                const groupedTranses = {};
+                snapshot.forEach((docSnapshot) => {
+                    const data = docSnapshot.data();
+                    const subject = data.subject || "General";
+                    if (!groupedTranses[subject]) groupedTranses[subject] = [];
+                    groupedTranses[subject].push({ id: docSnapshot.id, ...data });
+                });
+
+                for (const subject in groupedTranses) {
+                    const details = document.createElement('details');
+                    details.className = 'subject-group';
+                    const summary = document.createElement('summary');
+                    summary.innerHTML = `${subject} <span style="font-weight: normal; color: #666; font-size: 0.9em; float: right;">(${groupedTranses[subject].length} items)</span>`;
+                    details.appendChild(summary);
+
+                    const transContainer = document.createElement('div');
+                    transContainer.className = 'subject-tasks';
+
+                    groupedTranses[subject].forEach(file => {
+                        const div = document.createElement('div');
+                        div.className = 'admin-task';
+                        
+                        div.innerHTML = `
+                            <div class="admin-task-info">
+                                <strong>${file.lesson || "Lesson"}</strong>
+                                <span>${file.transName || "Unnamed Notes"}</span>
+                            </div>
+                        `;
+                        const delBtn = document.createElement('button');
+                        delBtn.className = 'delete-btn';
+                        delBtn.innerText = 'Remove';
+                        delBtn.onclick = async () => {
+                            delBtn.innerText = '...';
+                            await deleteDoc(doc(db, "olfu_transes", file.id));
+                            loadLiveTranses(); 
+                        };
+                        div.appendChild(delBtn);
+                        transContainer.appendChild(div);
+                    });
+                    details.appendChild(transContainer);
+                    list.appendChild(details);
+                }
+            } catch (error) {
+                list.innerHTML = 'Error loading transes.';
+            }
+        }
+        loadLiveTranses();
+
         // --- UPGRADED SUBMIT SCHEDULE LOGIC ---
         document.getElementById('submitBtn').addEventListener('click', async () => {
             const subject = document.getElementById('schedSubject').value.trim();
@@ -191,7 +260,6 @@
                 status.style.color = "green";
                 status.innerText = `Successfully published!`;
                 
-                // Clear the boxes for the next announcement
                 document.getElementById('schedSubject').value = '';
                 document.getElementById('schedTask').value = '';
                 document.getElementById('schedDate').value = '';
@@ -240,6 +308,8 @@
                 status.innerText = "Link successfully published!";
                 document.getElementById('transFormat').value = '';
                 document.getElementById('transLink').value = '';
+                
+                loadLiveTranses();
 
             } catch (error) {
                 status.style.color = "red";
